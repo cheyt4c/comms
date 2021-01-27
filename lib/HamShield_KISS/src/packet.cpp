@@ -31,90 +31,112 @@ AFSK::Packet preallocPackets[PPOOL_SIZE];
 #endif
 
 void AFSK::Encoder::process() {
-  // We're on the start of a byte position, so fetch one
-  if(bitPosition == 0) {
-    if(preamble) { // Still in preamble
-      currentByte = HDLC_PREAMBLE;
-      --preamble; // Decrement by one
-    } else {
-      if(!packet) { // We aren't on a packet, grab one
-        // Unless we already sent enough
-        if(maxTx-- == 0) {
-          stop();
-          lastTxEnd = millis();
-          return;
-        }
-        packet = pBuf.getPacket();
-        if(!packet) { // There actually weren't any
-          stop(); // Stop transmitting and return
-          lastTxEnd = millis();
-          return;
-        }
-        lastTx = millis();
-        currentBytePos = 0;
-        nextByte = HDLC_FRAME; // Our next output should be a frame boundary
-        hdlc = true;
-      }
-  
-      // We ran out of actual data, provide an HDLC frame (idle)
-      if(currentBytePos == packet->len && nextByte == 0) {
-        // We also get here if nextByte isn't set, to handle empty frames
-        pBuf.freePacket(packet);
-        packet = pBuf.getPacket(); // Get the next, if any
-        //packet = NULL;
-        currentBytePos = 0;
-        nextByte = 0;
-        currentByte = HDLC_FRAME;
-        hdlc = true;
-      } else {
-        if(nextByte) {
-          // We queued up something other than the actual stream to be sent next
-          currentByte = nextByte;
-          nextByte = 0;
+
+    if(bitPosition % 8 == 0 && !noNewByte) {
+        // We're on the start of a byte position, so fetch one
+        if(preamble) {
+            // Still in preamble
+            currentByte = HDLC_PREAMBLE;
+            --preamble; // Decrement by one
         } else {
-          // Get the next byte to send, but if it's an HDLC frame, escape it
-          // and queue the real byte for the next cycle.
-          currentByte = packet->getByte();
-          if(currentByte == HDLC_FRAME) {
-            nextByte = currentByte;
-            currentByte = HDLC_ESCAPE;
-          } else {
-            currentBytePos++;
-          }
-          hdlc = false; // If we get here, it will be NRZI bit stuffed
+            if(!packet) { 
+                // We aren't on a packet, grab one
+                // Unless we already sent enough
+                if(maxTx-- == 0) {
+                    // max number of packets reached, exit
+                    stop();
+                    lastTxEnd = millis();
+                    return;
+                }
+                packet = pBuf.getPacket();
+                if(!packet) { 
+                    // There actually weren't any packets
+                    stop(); // Stop transmitting and return
+                    lastTxEnd = millis();
+                    return;
+                }
+                lastTx = millis();
+                currentBytePos = 0;
+                nextByte = HDLC_FRAME; // Our next output should be a frame boundary
+                hdlc = true;
+            }
+
+            if(currentBytePos == packet->len && nextByte == 0) {
+                // We ran out of actual data, provide an HDLC frame (idle)
+                // We also get here if nextByte isn't set, to handle empty frames
+                pBuf.freePacket(packet);
+                packet = pBuf.getPacket(); // Get the next, if any
+                
+                currentBytePos = 0;
+                nextByte = 0;
+                currentByte = HDLC_FRAME;
+                hdlc = true;
+            } else {
+                // still data to go
+                if(nextByte) {
+                    // We queued up something other than the actual stream (e.g. HDLC delimiter) to be sent next, so get that!
+                    currentByte = nextByte;
+                    nextByte = 0;
+                } else {
+                    // Get the next byte to send, but if it's an HDLC frame, escape it
+                    // and queue the real byte for the next cycle.
+                    currentByte = packet->getByte();
+                    //if(currentByte == HDLC_FRAME) {
+                    //    nextByte = currentByte;
+                    //    currentByte = HDLC_ESCAPE;
+                    //} else {
+                        currentBytePos++;
+                    //}
+                    
+                    hdlc = false; // If we get here, it will be NRZI bit stuffed
+                }
+            }
         }
-      }
+   
+        // if (!preamble) {
+        //     Serial.print("\ncurrentBytePos=");
+        //     Serial.print(currentBytePos);
+        //     Serial.print(" currentByte=");
+        //     Serial.println(currentByte, BIN);
+        // }
     }
-  }
 
-  // Pickup the last bit
-  currentBit = currentByte & 0x1;    
+    noNewByte = false;
+    // Pickup the last bit
+    currentBit = currentByte & 0x1;    
 
-  if(lastZero == 5) {
-    currentBit = 0; // Force a 0 bit output
-  } else {
-    currentByte >>= 1; // Bit shift it right, for the next round
-    ++bitPosition; // Note our increase in position
-  }
+    if(lastZero == 5) {
+        currentBit = 0; // Force a 0 bit output
+        noNewByte = true;
+    } else {
+        currentByte >>= 1; // Bit shift it right, for the next round
+        ++bitPosition; // Note our increase in position
+    }
 
-  // To handle NRZI 5 bit stuffing, count the bits
-  if(!currentBit || hdlc)
-    lastZero = 0;
-  else
-    ++lastZero;
+    //Serial.print(currentBit);
 
-  // NRZI and AFSK uses toggling 0s, "no change" on 1
-  // So, if not a 1, toggle to the opposite tone
-  if(!currentBit)
-    currentTone = !currentTone;
-  
-  if(currentTone == 0) {
-    PORTD |= _BV(7);
-    dds->setFrequency(AFSK_SPACE);
-  } else {
-    PORTD &= ~_BV(7);
-    dds->setFrequency(AFSK_MARK);
-  }
+    // To handle NRZI 5 bit stuffing, count the bits
+    if(!currentBit || hdlc) 
+        // we have hit a 0, so reset our count of ones OR
+        // we are performing a HDLC sequence and do not need to count 1s
+        lastZero = 0;
+        
+    else
+        // we have hit a one - note it down!
+        ++lastZero;
+    
+    // NRZI and AFSK uses toggling 0s, "no change" on 1
+    // So, if not a 1, toggle to the opposite tone
+    if(!currentBit)
+        currentTone = !currentTone;
+
+    if(currentTone == 0) {
+        PORTD |= _BV(7);
+        dds->setFrequency(AFSK_SPACE);
+    } else {
+        PORTD &= ~_BV(7);
+        dds->setFrequency(AFSK_MARK);
+    }
 }
 
 bool AFSK::Encoder::start() {
@@ -134,6 +156,7 @@ bool AFSK::Encoder::start() {
   preamble = 0b110000; // 6.7ms each, 23 = 153ms
   done = false;
   hdlc = true;
+  noNewByte = false;
   packet = 0x0; // No initial packet, find in the ISR
   currentBytePos = 0;
   maxTx = 3;

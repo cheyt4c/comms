@@ -1,23 +1,4 @@
 #include <Arduino.h>
-/* Hamshield
- * Example: AFSK Serial Messenger
- * Serial glue to send messages over APRS. You will need a 
- * seperate AFSK receiver to test the output of this example.
- * Connect the HamShield to your Arduino. Screw the antenna 
- * into the HamShield RF jack. After uploading this program 
- * to your Arduino, open the Serial Monitor to monitor. Type 
- * a message under 254 characters into the bar at the top of 
- * the monitor. Click the "Send" button. Check for output on 
- * AFSK receiver.
- *
- * To send a message: connect to the Arduino over a Serial link.
- * Send the following over the serial link:
- * `from,to,:message
- * example: * KG7OGM,KG7OGM,:Hi there`
- */
-
-
-
 #include <HamShield.h>
 #include <DDS.h>
 #include <packet.h>
@@ -78,7 +59,7 @@ String messagebuff = "";
 String encodedMEGAMessage = "";
 String origin_call = "";
 String destination_call = "";
-String textmessage = "";
+String textmessage = "O";
 int msgptr = 0;
 byte packetEncoded[22*6] = {0};
 long *packetStruct;
@@ -180,6 +161,8 @@ void loop() {
         msgptr++;
       }
     }*/
+
+    delay(5000);
     if(msgptr > 254) { messagebuff = ""; Serial.print("X!"); }
     prepMessage();
    if(afsk.decoder.read() || afsk.rxPacketCount()) {
@@ -302,39 +285,34 @@ void packetPrePrint(Stream *s) {
 }
 
 void prepMessage() { 
-  Serial.println("got into prepmessage");
+  //Serial.println("got into prepmessage");
    
   radio.setModeTransmit();
 
-  Serial.println("set mode to transmit");
+  //Serial.println("set mode to transmit");
   
-  delay(1000);
+  delay(10);
   origin_call = "VK2UNS";                                          // get originating callsign
   destination_call = "VK2UNS"; // get the destination call
 
-
-  
-  textmessage = "";
-
   //Serial.println("got before textmessage");
-  for(int i = 0;i<6*22;i++) {
-        /*if((char)packetEncoded[i] == '"') {
-                packetEncoded[i] = 'z';        
-        }*/
+  // for(int i = 0;i<6*22;i++) {
+  //       /*if((char)packetEncoded[i] == '"') {
+  //               packetEncoded[i] = 'z';        
+  //       }*/
 
         
-        textmessage += (char)packetEncoded[i];
-  }
+  //       textmessage += (char)packetEncoded[i];
+  // }
 
-  Serial.println("set textmessage as: ");
-  //textmessage = "/59<I$DbPJ$#Z.(###A[)###/+1%($##GI'$RB?F*b#313)$#/VM*$#/VM*$*?+###0*;###`+%###0*;####32%)$#32%)$#=1S*$#32%)$#/VM*$VD'3&$*=P'##\\LS[(#";
+  Serial.print("set textmessage as: ");
   textmessage = "/59<I$DbPJ$#Z.(###A[)###/+1%($##GI'$RB?F*b#313)$#/VM*$#/VM*$*?+###0*;###`+%###0*;####32%)$#32%)$#=1S*$#32%)$#/VM*$VD'3&$*=P'##\\LS[(#";
+  //textmessage = "~";
   Serial.println(textmessage);
-  //Serial.println(textmessage);
   
  // Serial.print("From: "); Serial.print(origin_call); Serial.print(" To: "); Serial.println(destination_call); Serial.println("Text: "); Serial.println(textmessage);
 
-  AFSK::Packet *packet = AFSK::PacketBuffer::makePacket(origin_call.length()+destination_call.length()+textmessage.length());
+  AFSK::Packet *packet = AFSK::PacketBuffer::makePacket(origin_call.length()+destination_call.length()+textmessage.length()+10);
 
   packet->start();
   packet->appendCallsign(origin_call.c_str(),0);
@@ -343,8 +321,10 @@ void prepMessage() {
   packet->appendFCS(0xf0);
   packet->print(textmessage);
   packet->finish();
-
+  
   bool ret = afsk.putTXPacket(packet);
+  Serial.print("TX packet returned: ");
+  Serial.println(ret);
 
   if(afsk.txReady()) {
     //Serial.println(F("txReady"));
