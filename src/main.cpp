@@ -3,7 +3,9 @@
 #include <DDS.h>
 #include <packet.h>
 #include <avr/wdt.h>
-#include <SoftwareSerial.h>  
+#include <SoftwareSerial.h>
+#include <Base64.h>
+
 //#include <base64.hpp> //what is this for???
 SoftwareSerial Serial1(2, 3);
 // #define MIC_PIN 9
@@ -20,6 +22,8 @@ SoftwareSerial Serial1(2, 3);
 
 #define MASK B00111111
 #define FP_DP 5
+
+#define BASE64_LEN(n)  (n + 2 - ((n + 2) % 3)) / 3 * 4
 
 typedef struct {
     uint8_t err;
@@ -318,12 +322,16 @@ void prepMessage() {
 
   AFSK::Packet *packet = AFSK::PacketBuffer::makePacket(origin_call.length()+destination_call.length()+10);
 
+  char base64_buf[BASE64_LEN(sizeof(sensor_packet_t))];
+  Base64.encode(base64_buf, reinterpret_cast<char*>(&sensorData), sizeof(sensorData));
+
+
   packet->start();
   packet->appendCallsign(origin_call.c_str(),0);
   packet->appendCallsign(destination_call.c_str(),15,true);   
   packet->appendFCS(0x03);
   packet->appendFCS(0xf0);
-  packet->write(reinterpret_cast<uint8_t*>(&sensorData), sizeof(sensorData));
+  packet->write(base64_buf, sizeof(base64_buf));
   packet->finish();
   
   bool ret = afsk.putTXPacket(packet);
