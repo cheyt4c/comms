@@ -4,8 +4,9 @@
 #include <packet.h>
 #include <avr/wdt.h>
 #include <SoftwareSerial.h>  
+#define DDS_DEBUG_SERIAL
 //#include <base64.hpp> //what is this for???
-SoftwareSerial Serial1(2, 3);
+//SoftwareSerial Serial1(2, 3);
 // #define MIC_PIN 9
 // #define RESET_PIN A3
 // #define SWITCH_PIN 2
@@ -13,7 +14,7 @@ SoftwareSerial Serial1(2, 3);
 // #define DATA_PIN 20
 // #define CLK_PIN 21
 
-#define MIC_PIN 3
+#define MIC_PIN 9
 #define RESET_PIN A3
 #define SWITCH_PIN 2
 #define NCS_PIN A1
@@ -101,6 +102,8 @@ void setup() {
   
   // set up the reset control pin
   pinMode(RESET_PIN, OUTPUT);
+
+  pinMode(6,OUTPUT);
   // turn on the radio
   digitalWrite(RESET_PIN, HIGH);
   delay(5); // wait for device to come up
@@ -110,6 +113,8 @@ void setup() {
   //Serial.print(testFloat2,10);
 
   Serial.println(radio.testConnection() ? "success" : "fail");
+
+  
 
   radio.initialize();
   radio.frequency(144390); // default aprs frequency in North America
@@ -311,10 +316,12 @@ void prepMessage() {
   Serial.println(msg);
   
  // Serial.print("From: "); Serial.print(origin_call); Serial.print(" To: "); Serial.println(destination_call); Serial.println("Text: "); Serial.println(textmessage);
-  uint8_t* ptr = reinterpret_cast<uint8_t*>(&sensorData);
-  for (int i = 0; i < sizeof(sensorData); i++) {
-    Serial.print(ptr[i], HEX);
-  }
+  // uint8_t* ptr = reinterpret_cast<uint8_t*>(&sensorData);
+  // for (int i = 0; i < sizeof(sensorData); i++) {
+  //   Serial.print(ptr[i], HEX);
+  // }
+
+  char *test = "asdf";
 
   AFSK::Packet *packet = AFSK::PacketBuffer::makePacket(origin_call.length()+destination_call.length()+10);
 
@@ -323,7 +330,7 @@ void prepMessage() {
   packet->appendCallsign(destination_call.c_str(),15,true);   
   packet->appendFCS(0x03);
   packet->appendFCS(0xf0);
-  packet->write(reinterpret_cast<uint8_t*>(&sensorData), sizeof(sensorData));
+  packet->write(test, 5);
   packet->finish();
   
   bool ret = afsk.putTXPacket(packet);
@@ -355,12 +362,14 @@ void prepMessage() {
  
 
 ISR(TIMER2_OVF_vect) {
+  PORTH |= (1<<3); 
   TIFR2 = _BV(TOV2);
   static uint8_t tcnt = 0;
   if(++tcnt == 8) {
     dds.clockTick();
     tcnt = 0;
   }
+  PORTH &= ~(1<<3); 
 }
 
 ISR(ADC_vect) {
