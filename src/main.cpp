@@ -65,6 +65,11 @@ int msgptr = 0;
 byte packetEncoded[22*6] = {0};
 long *packetStruct;
 
+
+char msgbuf[256] = {0};
+uint8_t msgsize = 0;
+
+
 float testFloat1 = 63527.72192;
 float testFloat2 = -1827.36283618;
 
@@ -76,7 +81,7 @@ char encodedMEGA[100] = {0};
 void longPacketEncode(long *n);
 void getStruct(void);
 void packetPrePrint(Stream *s);
-void prepMessage();
+void sendMessage(char msg[],int msgsize);
 //Sephiroth!
 
 void setup() {
@@ -109,6 +114,7 @@ void setup() {
   delay(5); // wait for device to come up
   
   Serial.begin(9600);
+  Serial1.begin(9600);
   //Serial1.begin(9600);
   //Serial.print(testFloat2,10);
 
@@ -137,17 +143,16 @@ void setup() {
 void loop() {
     //Serial.println("looping");
 
-    // if(Serial1.available()) {
-    //    getStruct();
-    //    //Serial.println("Got out of getStruct");
-    //    longPacketEncode(packetStruct);
-    //    //Serial.println("Got out of LPE");
-    //    prepMessage(); 
-    //    //Serial.println("Got out of prepMessage");
-    //    msgptr = 0; 
-    //    messagebuff = "";
-    //    Serial.println("!!");    
-    // }
+    if(Serial1.available()) {
+      char msg_c = Serial1.read();
+      if (!(msg_c == 0x0d || msg_c == 0x0a)){
+        msgbuf[msgsize++] = msg_c;
+        //Serial.print(msg_c,HEX);
+      }else if (msg_c == 0x0d){
+        sendMessage(msgbuf,msgsize);
+        msgsize = 0;
+      }
+    }
 
     /*if(Serial.available()) { 
       char temp = (char)Serial.read();
@@ -167,9 +172,7 @@ void loop() {
       }
     }*/
 
-    delay(5000);
     if(msgptr > 254) { messagebuff = ""; Serial.print("X!"); }
-    prepMessage();
    if(afsk.decoder.read() || afsk.rxPacketCount()) {
       // A true return means something was put onto the packet FIFO
       // If we actually have data packets in the buffer, process them all now
@@ -289,7 +292,7 @@ void packetPrePrint(Stream *s) {
 
 }
 
-void prepMessage() { 
+void sendMessage(char msg[],int msgsize) { 
   //Serial.println("got into prepmessage");
    
   radio.setModeTransmit();
@@ -312,16 +315,13 @@ void prepMessage() {
 
   Serial.print("set textmessage as: ");
   //textmessage = "/59<I$DbPJ$#Z.(###A[)###/+1%($##GI'$RB?F*b#313)$#/VM*$#/VM*$*?+###0*;###`+%###0*;####32%)$#32%)$#=1S*$#32%)$#/VM*$VD'3&$*=P'##\\LS[(#";
-  int msg = 0x7E;
-  Serial.println(msg);
-  
+  Serial.write(msg,msgsize);
+  Serial.println("");
  // Serial.print("From: "); Serial.print(origin_call); Serial.print(" To: "); Serial.println(destination_call); Serial.println("Text: "); Serial.println(textmessage);
   // uint8_t* ptr = reinterpret_cast<uint8_t*>(&sensorData);
   // for (int i = 0; i < sizeof(sensorData); i++) {
   //   Serial.print(ptr[i], HEX);
   // }
-
-  char *test = "asdf";
 
   AFSK::Packet *packet = AFSK::PacketBuffer::makePacket(origin_call.length()+destination_call.length()+10);
 
@@ -330,7 +330,7 @@ void prepMessage() {
   packet->appendCallsign(destination_call.c_str(),15,true);   
   packet->appendFCS(0x03);
   packet->appendFCS(0xf0);
-  packet->write(test, 5);
+  packet->write(msg, msgsize);
   packet->finish();
   
   bool ret = afsk.putTXPacket(packet);
